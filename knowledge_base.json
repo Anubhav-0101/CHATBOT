@@ -1,0 +1,120 @@
+{
+  "metadata": {
+    "bot_name": "NEW GEN AI Chat Bot",
+    "author": "Anubhav",
+    "version": "1.0",
+    "last_updated": "2025-01-01T00:00:00",
+    "total_qa": 12
+  },
+  "qa_pairs": [
+    {
+      "id": 1,
+      "question": "What is artificial intelligence?",
+      "answer": "Artificial Intelligence (AI) is the simulation of human intelligence processes by machines, especially computer systems. Key capabilities include:\n- **Learning**: Acquiring information and rules for using it\n- **Reasoning**: Using rules to reach approximate or definite conclusions\n- **Self-correction**: Improving performance over time\n- **Perception**: Understanding visual, audio, and text inputs\n\nAI powers technologies like voice assistants, recommendation engines, self-driving cars, and medical diagnostics.",
+      "tags": ["AI", "technology", "basics"],
+      "confidence": 1.0,
+      "updated_at": "2025-01-01T00:00:00",
+      "asked_count": 0
+    },
+    {
+      "id": 2,
+      "question": "What is machine learning?",
+      "answer": "Machine Learning (ML) is a subset of AI that enables systems to learn and improve from experience without being explicitly programmed. Types include:\n- **Supervised Learning**: Trained on labeled data (e.g., spam detection)\n- **Unsupervised Learning**: Finds patterns in unlabeled data (e.g., customer segmentation)\n- **Reinforcement Learning**: Learns via rewards and penalties (e.g., game-playing AIs)\n\nML algorithms include Decision Trees, Neural Networks, SVMs, and Gradient Boosting.",
+      "tags": ["ML", "AI", "technology"],
+      "confidence": 1.0,
+      "updated_at": "2025-01-01T00:00:00",
+      "asked_count": 0
+    },
+    {
+      "id": 3,
+      "question": "What is deep learning?",
+      "answer": "Deep Learning is a subset of Machine Learning using neural networks with many layers (hence 'deep'). Key points:\n- Inspired by the human brain's neural structure\n- Excels at image recognition, speech processing, and NLP\n- Requires large amounts of data and significant computing power\n- Frameworks: TensorFlow, PyTorch, Keras\n\nApplications: facial recognition, language translation, autonomous vehicles, medical imaging.",
+      "tags": ["deep learning", "neural networks", "AI"],
+      "confidence": 1.0,
+      "updated_at": "2025-01-01T00:00:00",
+      "asked_count": 0
+    },
+    {
+      "id": 4,
+      "question": "What is Python?",
+      "answer": "Python is a high-level, interpreted, general-purpose programming language known for its simplicity and readability. Features:\n- **Easy Syntax**: Beginner-friendly, resembles plain English\n- **Versatile**: Web dev, data science, AI/ML, automation, scripting\n- **Rich Libraries**: NumPy, Pandas, TensorFlow, Django, Flask\n- **Community**: One of the largest developer communities\n\nCreated by Guido van Rossum in 1991, Python consistently ranks as the world's most popular programming language.",
+      "tags": ["Python", "programming", "language"],
+      "confidence": 1.0,
+      "updated_at": "2025-01-01T00:00:00",
+      "asked_count": 0
+    },
+    {
+      "id": 5,
+      "question": "What is Google Gemini?",
+      "answer": "Google Gemini is Google's most capable multimodal AI model family, developed by Google DeepMind. Key highlights:\n- **Multimodal**: Understands text, images, audio, video, and code\n- **Versions**: Gemini Ultra, Pro, Flash, and Nano (for on-device use)\n- **API Access**: Available via Google AI Studio and Vertex AI\n- **Integration**: Powers Google products like Bard, Search, Workspace\n\nGemini represents Google's response to GPT-4 and is designed to reason across different types of information seamlessly.",
+      "tags": ["Gemini", "Google", "AI", "LLM"],
+      "confidence": 1.0,
+      "updated_at": "2025-01-01T00:00:00",
+      "asked_count": 0
+    },
+    {
+      "id": 6,
+      "question": "What is a vector database?",
+      "answer": "A vector database stores data as high-dimensional numerical vectors (embeddings) and enables fast similarity searches. Key aspects:\n- **Embeddings**: Text/images converted to numeric vectors by ML models\n- **Similarity Search**: Finds semantically similar content using cosine or Euclidean distance\n- **Use Cases**: Semantic search, recommendation systems, RAG (Retrieval-Augmented Generation)\n- **Popular Options**: Pinecone, Weaviate, Chroma, FAISS, Milvus\n\nVector databases are central to modern AI applications that need to retrieve contextually relevant information at scale.",
+      "tags": ["vector database", "embeddings", "AI", "search"],
+      "confidence": 1.0,
+      "updated_at": "2025-01-01T00:00:00",
+      "asked_count": 0
+    },
+    {
+      "id": 7,
+      "question": "What is natural language processing?",
+      "answer": "Natural Language Processing (NLP) is a branch of AI that helps computers understand, interpret, and generate human language. Applications include:\n- **Sentiment Analysis**: Understanding emotions in text\n- **Machine Translation**: Google Translate, DeepL\n- **Text Summarization**: Condensing long documents\n- **Named Entity Recognition (NER)**: Identifying names, dates, locations\n- **Chatbots & Virtual Assistants**: Siri, Alexa, ChatGPT\n\nKey techniques: Tokenization, Word Embeddings (Word2Vec, GloVe), Transformers (BERT, GPT).",
+      "tags": ["NLP", "language", "AI"],
+      "confidence": 1.0,
+      "updated_at": "2025-01-01T00:00:00",
+      "asked_count": 0
+    },
+    {
+      "id": 8,
+      "question": "What is a neural network?",
+      "answer": "A neural network is a computing system modeled after the human brain's interconnected neurons. Structure:\n- **Input Layer**: Receives raw data\n- **Hidden Layers**: Process and transform data through weighted connections\n- **Output Layer**: Produces the final result\n- **Activation Functions**: ReLU, Sigmoid, Tanh — introduce non-linearity\n\nTraining uses Backpropagation + Gradient Descent to minimize error. Neural networks power image classifiers, language models, and recommendation systems.",
+      "tags": ["neural network", "deep learning", "AI"],
+      "confidence": 1.0,
+      "updated_at": "2025-01-01T00:00:00",
+      "asked_count": 0
+    },
+    {
+      "id": 9,
+      "question": "What is the difference between AI and ML?",
+      "answer": "AI (Artificial Intelligence) and ML (Machine Learning) are related but distinct:\n\n| Aspect | AI | ML |\n|---|---|---|\n| Scope | Broad field | Subset of AI |\n| Goal | Simulate human intelligence | Learn from data |\n| Method | Rules, logic, ML, etc. | Statistical learning |\n| Example | Chess engine, Siri | Spam filter, image classifier |\n\n**In short**: All ML is AI, but not all AI is ML. AI is the broader concept; ML is one powerful technique within it.",
+      "tags": ["AI", "ML", "comparison"],
+      "confidence": 1.0,
+      "updated_at": "2025-01-01T00:00:00",
+      "asked_count": 0
+    },
+    {
+      "id": 10,
+      "question": "What is data science?",
+      "answer": "Data Science is an interdisciplinary field combining statistics, programming, and domain expertise to extract insights from data. Key components:\n- **Data Collection**: Gathering raw data from various sources\n- **Data Cleaning**: Handling missing values, outliers, formatting\n- **Exploratory Analysis (EDA)**: Understanding patterns and distributions\n- **Modeling**: Building predictive models using ML\n- **Visualization**: Communicating results with charts and dashboards\n\nTools: Python (Pandas, NumPy, Scikit-learn), R, SQL, Tableau, Jupyter Notebooks.",
+      "tags": ["data science", "statistics", "analytics"],
+      "confidence": 1.0,
+      "updated_at": "2025-01-01T00:00:00",
+      "asked_count": 0
+    },
+    {
+      "id": 11,
+      "question": "What is a large language model?",
+      "answer": "A Large Language Model (LLM) is a deep learning model trained on massive text datasets to understand and generate human-like text. Characteristics:\n- **Scale**: Billions to trillions of parameters\n- **Training**: Self-supervised on internet-scale text (books, websites, code)\n- **Capabilities**: Text generation, summarization, Q&A, code writing, translation\n- **Examples**: GPT-4, Claude, Gemini, LLaMA, Mistral\n\nLLMs use the Transformer architecture and are fine-tuned with RLHF (Reinforcement Learning from Human Feedback) for alignment.",
+      "tags": ["LLM", "language model", "AI", "GPT"],
+      "confidence": 1.0,
+      "updated_at": "2025-01-01T00:00:00",
+      "asked_count": 0
+    },
+    {
+      "id": 12,
+      "question": "What is reinforcement learning?",
+      "answer": "Reinforcement Learning (RL) is a type of ML where an agent learns to make decisions by interacting with an environment to maximize cumulative reward. Core concepts:\n- **Agent**: The learner/decision-maker\n- **Environment**: The world the agent interacts with\n- **State**: Current situation of the agent\n- **Action**: Choices the agent can make\n- **Reward**: Feedback signal (positive/negative)\n- **Policy**: Strategy mapping states to actions\n\nFamous applications: AlphaGo, game-playing AIs, robotic control, autonomous driving, ChatGPT's RLHF training.",
+      "tags": ["reinforcement learning", "RL", "AI"],
+      "confidence": 1.0,
+      "updated_at": "2025-01-01T00:00:00",
+      "asked_count": 0
+    }
+  ],
+  "pending_questions": []
+}
