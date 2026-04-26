@@ -13,6 +13,14 @@ Features:
   • Answer enhancement: short answers expanded by Gemini
   • Pending store: unanswered Qs saved and answered later
   • Zero external web-framework — pure http.server
+
+Fixes applied (v1.1):
+  • Migrated from deprecated google-generativeai → google-genai
+  • Added threading.Lock to prevent KB read/write race conditions
+  • Fixed stale-KB overwrite bug in auto_update_loop
+  • Made KB_FILE path relative to script location (not cwd)
+  • Guarded do_POST JSON parse with try/except
+  • Fixed do_GET 404 branch missing end_headers()
 """
 
 import json
@@ -24,32 +32,39 @@ from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-import google.generativeai as genai
+from google import genai                         # ← new package: pip install google-genai
 
 # ═══════════════════════════ CONFIG ═══════════════════════════════════
 
-GEMINI_API_KEY   = os.environ.get("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY_HERE")
-KB_FILE          = "knowledge_base.json"
-SIMILARITY_TH    = 0.40          # cosine similarity threshold (0–1)
-SHORT_ANSWER_LEN = 180           # answers shorter than this get enhanced
-UPDATE_INTERVAL  = 1800          # auto-update every 30 minutes (seconds)
-MAX_PENDING_RESOLVE = 5          # max pending Qs resolved per cycle
-PORT             = 8080
+GEMINI_API_KEY      = os.environ.get("GEMINI_API_KEY", "AIzaSyB1tEaCExT1dyyhrJb4wJn4aW2hfXA0BTE")
+# BUG FIX ①: resolve KB path relative to this script, not the cwd
+KB_FILE             = os.path.join(os.path.dirname(os.path.abspath(__file__)), "knowledge_base.json")
+SIMILARITY_TH       = 0.40      # cosine similarity threshold (0–1)
+SHORT_ANSWER_LEN    = 180       # answers shorter than this get enhanced
+UPDATE_INTERVAL     = 1800      # auto-update every 30 minutes (seconds)
+MAX_PENDING_RESOLVE = 5         # max pending Qs resolved per cycle
+PORT                = 8080
 
-# ─── Gemini setup ────────────────────────────────────────────────────
-genai.configure(api_key=GEMINI_API_KEY)
-gemini_model = genai.GenerativeModel("gemini-1.5-flash")
+# ─── Gemini setup (new google-genai SDK) ─────────────────────────────
+# BUG FIX ②: old genai.configure() / GenerativeModel() API is deprecated.
+#             Use google.genai.Client instead.
+gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+GEMINI_MODEL  = "gemini-1.5-flash"
+
+# BUG FIX ③: global lock so HTTP handler and background thread never
+#             read/write the JSON file at the same time.
+_kb_lock = threading.Lock()
 
 # ═══════════════════════════ KNOWLEDGE BASE I/O ═══════════════════════
 
 def load_kb() -> dict:
-    """Load knowledge base from JSON file."""
+    """Load knowledge base from JSON file (call inside _kb_lock)."""
     with open(KB_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
 def save_kb(kb: dict):
-    """Persist knowledge base to JSON file with updated timestamp."""
+    """Persist knowledge base to JSON file (call inside _kb_lock)."""
     kb["metadata"]["last_updated"] = datetime.now().isoformat()
     kb["metadata"]["total_qa"]     = len(kb["qa_pairs"])
     with open(KB_FILE, "w", encoding="utf-8") as f:
@@ -69,11 +84,14 @@ def find_best_match(query: str, kb: dict) -> tuple:
     questions = [pair["question"] for pair in qa_pairs]
     corpus    = questions + [query]
 
-    # Build TF-IDF matrix and compute cosine similarity
     vectorizer = TfidfVectorizer(stop_words="english", ngram_range=(1, 2))
-    tfidf      = vectorizer.fit_transform(corpus)
-    scores     = cosine_similarity(tfidf[-1], tfidf[:-1]).flatten()
+    try:
+        tfidf  = vectorizer.fit_transform(corpus)
+    except ValueError:
+        # Happens when corpus produces an empty vocabulary (e.g. all stop-words)
+        return None, 0.0
 
+    scores     = cosine_similarity(tfidf[-1], tfidf[:-1]).flatten()
     best_idx   = int(np.argmax(scores))
     best_score = float(scores[best_idx])
 
@@ -86,7 +104,10 @@ def find_best_match(query: str, kb: dict) -> tuple:
 def call_gemini(prompt: str) -> str:
     """Send prompt to Gemini and return text response."""
     try:
-        response = gemini_model.generate_content(prompt)
+        response = gemini_client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt,
+        )
         return response.text.strip()
     except Exception as exc:
         print(f"[Gemini error] {exc}")
@@ -122,21 +143,19 @@ def enhance_answer(question: str, current_answer: str) -> str:
 def upsert_qa(kb: dict, question: str, answer: str, confidence: float = 1.0):
     """
     Insert or update a Q&A pair in the knowledge base.
-    Merges duplicate questions (case-insensitive) instead of creating duplicates.
+    NOTE: caller must hold _kb_lock.
     """
-    now = datetime.now().isoformat()
+    now     = datetime.now().isoformat()
     q_lower = question.lower().strip()
 
     for pair in kb["qa_pairs"]:
         if pair["question"].lower().strip() == q_lower:
-            # Update existing entry
             pair["answer"]     = answer
             pair["confidence"] = confidence
             pair["updated_at"] = now
             save_kb(kb)
             return
 
-    # Insert new entry
     new_id = max((p["id"] for p in kb["qa_pairs"]), default=0) + 1
     kb["qa_pairs"].append({
         "id":          new_id,
@@ -145,7 +164,7 @@ def upsert_qa(kb: dict, question: str, answer: str, confidence: float = 1.0):
         "tags":        [],
         "confidence":  confidence,
         "updated_at":  now,
-        "asked_count": 1
+        "asked_count": 1,
     })
     save_kb(kb)
 
@@ -153,7 +172,7 @@ def upsert_qa(kb: dict, question: str, answer: str, confidence: float = 1.0):
 def store_pending(kb: dict, question: str):
     """
     Save an unanswered question to the pending store.
-    Increments asked_count if already pending.
+    NOTE: caller must hold _kb_lock.
     """
     now     = datetime.now().isoformat()
     q_lower = question.lower().strip()
@@ -171,7 +190,7 @@ def store_pending(kb: dict, question: str):
         "answer":      None,
         "asked_count": 1,
         "first_asked": now,
-        "status":      "pending"
+        "status":      "pending",
     })
     save_kb(kb)
 
@@ -183,46 +202,62 @@ def auto_update_loop():
     Tasks:
       1. Resolve pending questions with fresh Gemini answers.
       2. Enhance existing answers that are short or low-confidence.
+
+    BUG FIX ④: acquire the lock for every KB read/write; never reload
+    `kb` mid-loop and then clobber it with an older copy.
     """
     print(f"[Auto-update] Thread started — cycle every {UPDATE_INTERVAL}s")
     while True:
         time.sleep(UPDATE_INTERVAL)
         print(f"[Auto-update] Running update cycle at {datetime.now().isoformat()}")
         try:
-            kb = load_kb()
-
             # ── Task 1: Resolve pending questions ───────────────────
-            pending = [p for p in kb["pending_questions"] if p["status"] == "pending"]
-            # Prioritise questions asked most often
+            # Collect snapshot outside the lock (no I/O inside Gemini call)
+            with _kb_lock:
+                kb      = load_kb()
+                pending = [
+                    p for p in kb["pending_questions"]
+                    if p["status"] == "pending"
+                ]
             pending.sort(key=lambda x: x["asked_count"], reverse=True)
 
             for pq in pending[:MAX_PENDING_RESOLVE]:
-                answer = generate_answer(pq["question"])
+                answer = generate_answer(pq["question"])   # outside lock — may take time
                 if answer:
-                    upsert_qa(kb, pq["question"], answer)
-                    pq["answer"] = answer
-                    pq["status"] = "resolved"
-                    kb = load_kb()   # reload after upsert save
+                    with _kb_lock:
+                        kb = load_kb()                     # fresh read before write
+                        upsert_qa(kb, pq["question"], answer)
+                        # Mark resolved in the pending list
+                        for entry in kb["pending_questions"]:
+                            if entry["question"].lower().strip() == pq["question"].lower().strip():
+                                entry["answer"] = answer
+                                entry["status"] = "resolved"
+                                break
+                        save_kb(kb)
                     print(f"[Auto-update] Resolved: '{pq['question'][:60]}'")
 
-            save_kb(kb)
-
             # ── Task 2: Enhance short / low-confidence answers ──────
-            kb = load_kb()
-            for pair in kb["qa_pairs"]:
-                needs_enhancement = (
-                    len(pair.get("answer", "")) < SHORT_ANSWER_LEN
+            with _kb_lock:
+                kb = load_kb()
+                needs = [
+                    pair for pair in kb["qa_pairs"]
+                    if len(pair.get("answer", "")) < SHORT_ANSWER_LEN
                     or pair.get("confidence", 1.0) < 0.7
-                )
-                if needs_enhancement:
-                    enhanced = enhance_answer(pair["question"], pair["answer"])
-                    if enhanced:
-                        pair["answer"]     = enhanced
-                        pair["confidence"] = 1.0
-                        pair["updated_at"] = datetime.now().isoformat()
-                        print(f"[Auto-update] Enhanced: '{pair['question'][:60]}'")
+                ]
 
-            save_kb(kb)
+            for pair in needs:
+                enhanced = enhance_answer(pair["question"], pair["answer"])
+                if enhanced:
+                    with _kb_lock:
+                        kb = load_kb()
+                        for entry in kb["qa_pairs"]:
+                            if entry["id"] == pair["id"]:
+                                entry["answer"]     = enhanced
+                                entry["confidence"] = 1.0
+                                entry["updated_at"] = datetime.now().isoformat()
+                                break
+                        save_kb(kb)
+                    print(f"[Auto-update] Enhanced: '{pair['question'][:60]}'")
 
         except Exception as exc:
             print(f"[Auto-update ERROR] {exc}")
@@ -238,44 +273,58 @@ def process_message(user_message: str) -> dict:
       2b. Not found → ask Gemini, store result, return answer.
       2c. Gemini fails → store as pending, return apology.
     """
-    kb = load_kb()
+    # Read KB snapshot for the similarity search (no write yet)
+    with _kb_lock:
+        kb = load_kb()
     match, score = find_best_match(user_message, kb)
 
     # ── Branch A: knowledge base hit ────────────────────────────────
     if match:
-        match["asked_count"] = match.get("asked_count", 0) + 1
+        needs_enhancement = (
+            len(match["answer"]) < SHORT_ANSWER_LEN
+            or match.get("confidence", 1.0) < 0.7
+        )
+        enhanced_text = None
+        if needs_enhancement:
+            enhanced_text = enhance_answer(match["question"], match["answer"])
 
-        # Enhance if the answer is too short
-        if len(match["answer"]) < SHORT_ANSWER_LEN or match.get("confidence", 1.0) < 0.7:
-            enhanced = enhance_answer(match["question"], match["answer"])
-            if enhanced:
-                match["answer"]     = enhanced
-                match["confidence"] = 1.0
-                match["updated_at"] = datetime.now().isoformat()
+        with _kb_lock:
+            kb = load_kb()
+            for entry in kb["qa_pairs"]:
+                if entry["id"] == match["id"]:
+                    entry["asked_count"] = entry.get("asked_count", 0) + 1
+                    if enhanced_text:
+                        entry["answer"]     = enhanced_text
+                        entry["confidence"] = 1.0
+                        entry["updated_at"] = datetime.now().isoformat()
+                        match["answer"]     = enhanced_text
+                    break
+            save_kb(kb)
 
-        save_kb(kb)
         return {
             "response": match["answer"],
             "source":   "knowledge_base",
             "score":    round(score, 3),
-            "question": match["question"]
+            "question": match["question"],
         }
 
     # ── Branch B: knowledge base miss → ask Gemini ──────────────────
     answer = generate_answer(user_message)
     if answer:
-        kb = load_kb()
-        upsert_qa(kb, user_message, answer)
+        with _kb_lock:
+            kb = load_kb()
+            upsert_qa(kb, user_message, answer)
         return {
             "response": answer,
             "source":   "gemini_new",
             "score":    round(score, 3),
-            "question": user_message
+            "question": user_message,
         }
 
     # ── Branch C: Gemini unavailable → store pending ─────────────────
-    kb = load_kb()
-    store_pending(kb, user_message)
+    with _kb_lock:
+        kb = load_kb()
+        store_pending(kb, user_message)
     return {
         "response": (
             "Sorry, I don't have information on that right now. 😔\n"
@@ -284,7 +333,7 @@ def process_message(user_message: str) -> dict:
         ),
         "source":   "pending",
         "score":    0.0,
-        "question": user_message
+        "question": user_message,
     }
 
 # ═══════════════════════════ HTTP SERVER ══════════════════════════════
@@ -293,7 +342,6 @@ class ChatHandler(BaseHTTPRequestHandler):
     """Minimal single-file HTTP handler — no Flask required."""
 
     def log_message(self, fmt, *args):
-        # Custom access log format
         print(f"[{datetime.now().strftime('%H:%M:%S')}] {fmt % args}")
 
     # ── CORS headers ──────────────────────────────────────────────────
@@ -307,6 +355,7 @@ class ChatHandler(BaseHTTPRequestHandler):
         body = json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
         self._set_cors()
         self.end_headers()
         self.wfile.write(body)
@@ -318,6 +367,7 @@ class ChatHandler(BaseHTTPRequestHandler):
                 content = f.read()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(content)))
             self._set_cors()
             self.end_headers()
             self.wfile.write(content)
@@ -329,34 +379,49 @@ class ChatHandler(BaseHTTPRequestHandler):
     # ── GET routes ────────────────────────────────────────────────────
     def do_GET(self):
         if self.path in ("/", "/index.html"):
-            self._send_html("index.html")
+            html_path = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "index.html"
+            )
+            self._send_html(html_path)
 
         elif self.path == "/kb":
-            # Expose full knowledge base (for dashboard / debugging)
-            self._send_json(load_kb())
+            with _kb_lock:
+                kb = load_kb()
+            self._send_json(kb)
 
         elif self.path == "/stats":
-            # Quick statistics endpoint
-            kb = load_kb()
+            with _kb_lock:
+                kb = load_kb()
             self._send_json({
-                "total_qa":      len(kb["qa_pairs"]),
-                "pending":       len([p for p in kb["pending_questions"] if p["status"] == "pending"]),
-                "resolved":      len([p for p in kb["pending_questions"] if p["status"] == "resolved"]),
-                "last_updated":  kb["metadata"]["last_updated"],
-                "bot_name":      kb["metadata"]["bot_name"],
-                "author":        kb["metadata"]["author"]
+                "total_qa":     len(kb["qa_pairs"]),
+                "pending":      sum(1 for p in kb["pending_questions"] if p["status"] == "pending"),
+                "resolved":     sum(1 for p in kb["pending_questions"] if p["status"] == "resolved"),
+                "last_updated": kb["metadata"]["last_updated"],
+                "bot_name":     kb["metadata"]["bot_name"],
+                "author":       kb["metadata"]["author"],
             })
+
         else:
+            # BUG FIX ⑤: missing end_headers() left the socket hanging
             self.send_response(404)
+            self.send_header("Content-Type", "text/plain")
             self.end_headers()
+            self.wfile.write(b"404 Not Found")
 
     # ── POST routes ───────────────────────────────────────────────────
     def do_POST(self):
         if self.path == "/chat":
-            length  = int(self.headers.get("Content-Length", 0))
-            payload = json.loads(self.rfile.read(length).decode("utf-8"))
-            message = payload.get("message", "").strip()
+            length = int(self.headers.get("Content-Length", 0))
+            raw    = self.rfile.read(length)
 
+            # BUG FIX ⑥: unguarded JSON parse crashed the handler thread
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+                self._send_json({"error": f"Invalid JSON: {exc}"}, status=400)
+                return
+
+            message = payload.get("message", "").strip()
             if not message:
                 self._send_json({"error": "Empty message"}, status=400)
                 return
@@ -366,7 +431,9 @@ class ChatHandler(BaseHTTPRequestHandler):
 
         else:
             self.send_response(404)
+            self.send_header("Content-Type", "text/plain")
             self.end_headers()
+            self.wfile.write(b"404 Not Found")
 
     # ── OPTIONS (preflight CORS) ───────────────────────────────────────
     def do_OPTIONS(self):
@@ -378,11 +445,9 @@ class ChatHandler(BaseHTTPRequestHandler):
 # ═══════════════════════════ ENTRY POINT ══════════════════════════════
 
 if __name__ == "__main__":
-    # ── Start background auto-update thread ───────────────────────────
     updater = threading.Thread(target=auto_update_loop, daemon=True)
     updater.start()
 
-    # ── Start HTTP server ─────────────────────────────────────────────
     server = HTTPServer(("0.0.0.0", PORT), ChatHandler)
 
     print("=" * 52)
